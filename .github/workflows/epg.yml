@@ -1,12 +1,17 @@
+
 name: Generate Combined beIN EPG (7 days)
 
 on:
   schedule:
-    - cron: "0 5 * * *"  # يوميًا الساعة 05:00 UTC
+    - cron: "0 5 * * *"
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: bein-epg-update
+  cancel-in-progress: false
 
 jobs:
   grab_bein:
@@ -15,100 +20,182 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "26"
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: epg/package-lock.json
 
       - name: Clone iptv-org/epg
         run: |
-          if [ ! -d "epg" ]; then
-            git clone --depth 1 https://github.com/iptv-org/epg.git
-          else
-            git -C epg pull
-          fi
+          git clone --depth 1 https://github.com/iptv-org/epg.git epg
 
       - name: Install dependencies
+        working-directory: epg
         run: |
-          cd epg
-          npm install
-          npm install xml2js
+          npm install --ignore-scripts
+          npm install --no-save --ignore-scripts xml2js tsx
 
-      # Grab MENA AR
-      - name: Grab beIN MENA AR EPG
+      - name: Verify channel files
+        working-directory: epg
         run: |
-          cd epg
-          npx tsx scripts/commands/epg/grab.ts \
+          test -f sites/beinsports.com/beinsports.com_mena-ar.channels.xml
+          test -f sites/beinsports.com/beinsports.com_fr-fr.channels.xml
+
+      - name: Grab beIN MENA AR EPG
+        working-directory: epg
+        run: |
+          ./node_modules/.bin/tsx scripts/commands/epg/grab.ts \
             --channels=sites/beinsports.com/beinsports.com_mena-ar.channels.xml \
             --output=guide_bein_mena_ar.xml \
             --days=7
 
-      # Grab FR-FR
       - name: Grab beIN FR-FR EPG
+        working-directory: epg
         run: |
-          cd epg
-          npx tsx scripts/commands/epg/grab.ts \
+          ./node_modules/.bin/tsx scripts/commands/epg/grab.ts \
             --channels=sites/beinsports.com/beinsports.com_fr-fr.channels.xml \
             --output=guide_bein_fr.xml \
             --days=7
 
-      # Merge EPGs and add logos
       - name: Merge EPGs and add logos
+        working-directory: epg
         run: |
-          cd epg
           node <<'EOF'
           const fs = require('fs');
           const xml2js = require('xml2js');
 
-          const files = ['guide_bein_mena_ar.xml', 'guide_bein_fr.xml'];
+          async function main() {
+            const files = [
+              'guide_bein_mena_ar.xml',
+              'guide_bein_fr.xml'
+            ];
 
-          const logos_ar = {
-            "7836FEA9-6B39-4A1A-8352-DC5FCB97A16C": "https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS1.png",
-            "beINSports2.qa@MENA": "https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS2.png",
-            "beINSports4.qa@MENA": "https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS4.png",
-            "beINSports5.qa@MENA": "https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS5.png",
-            "beINSports6.qa@MENA": "https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS6.png",
-            "beINSports7.qa@MENA": "https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS7.png",
-            "beINSports8.qa@MENA": "https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS8.png",
-            "5C08D9D3-C713-4F1F-947E-87C761428B9B": "https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS9.png"
-          };
+            const logos_ar = {
+              '7836FEA9-6B39-4A1A-8352-DC5FCB97A16C': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS1.png',
+              'beINSports2.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS2.png',
+              'beINSports4.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS4.png',
+              'beINSports5.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS5.png',
+              'beINSports6.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS6.png',
+              'beINSports7.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS7.png',
+              'beINSports8.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS8.png',
+              '5C08D9D3-C713-4F1F-947E-87C761428B9B': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS9.png'
+            };
 
-          const logos_fr = {
-            "beINSports1.qa@France": "https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-1-french-mea.png",
-            "beINSports2.qa@France": "https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-2-french-mea.png",
-            "beINSports3.qa@France": "https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-3-french-mea.png"
-          };
+            const logos_fr = {
+              'beINSports1.qa@France': 'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-1-french-mea.png',
+              'beINSports2.qa@France': 'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-2-french-mea.png',
+              'beINSports3.qa@France': 'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-3-french-mea.png'
+            };
 
-          const parser = new xml2js.Parser();
-          const builder = new xml2js.Builder({ headless: false, xmldec: { version: '1.0', encoding: 'UTF-8' } });
-
-          let merged = { tv: { $: {}, channel: [], programme: [] } };
-
-          files.forEach(file => {
-            const data = fs.readFileSync(file, 'utf-8');
-            parser.parseString(data, (err, result) => {
-              if (err) throw err;
-
-              result.tv.channel.forEach(ch => {
-                const id = ch.$.id;
-                if (logos_ar[id]) ch.icon = [{ $: { src: logos_ar[id] } }];
-                if (logos_fr[id]) ch.icon = [{ $: { src: logos_fr[id] } }];
-              });
-
-              merged.tv.channel.push(...result.tv.channel);
-              if (result.tv.programme) merged.tv.programme.push(...result.tv.programme);
+            const parser = new xml2js.Parser();
+            const builder = new xml2js.Builder({
+              headless: false,
+              xmldec: {
+                version: '1.0',
+                encoding: 'UTF-8'
+              }
             });
-          });
 
-          fs.writeFileSync('../epg_mapped_with_logos.xml', builder.buildObject(merged), 'utf-8');
+            const merged = {
+              tv: {
+                $: {},
+                channel: [],
+                programme: []
+              }
+            };
+
+            const channelIds = new Set();
+
+            for (const file of files) {
+              if (!fs.existsSync(file)) {
+                throw new Error(`Missing EPG file: ${file}`);
+              }
+
+              const xml = fs.readFileSync(file, 'utf8');
+              const result = await parser.parseStringPromise(xml);
+
+              if (!result.tv) {
+                throw new Error(`Invalid XMLTV document: ${file}`);
+              }
+
+              for (const ch of result.tv.channel || []) {
+                const id = ch.$?.id;
+
+                if (!id) continue;
+
+                if (logos_ar[id]) {
+                  ch.icon = [{ $: { src: logos_ar[id] } }];
+                } else if (logos_fr[id]) {
+                  ch.icon = [{ $: { src: logos_fr[id] } }];
+                }
+
+                if (!channelIds.has(id)) {
+                  channelIds.add(id);
+                  merged.tv.channel.push(ch);
+                }
+              }
+
+              merged.tv.programme.push(
+                ...(result.tv.programme || [])
+              );
+            }
+
+            if (merged.tv.channel.length === 0) {
+              throw new Error('No channels found in the merged EPG');
+            }
+
+            const output = builder.buildObject(merged);
+
+            fs.writeFileSync(
+              '../epg_mapped_with_logos.xml',
+              output,
+              'utf8'
+            );
+
+            console.log(`Channels: ${merged.tv.channel.length}`);
+            console.log(`Programs: ${merged.tv.programme.length}`);
+            console.log('Combined EPG generated successfully');
+          }
+
+          main().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
           EOF
 
-      - name: Commit & Push
+      - name: Validate combined EPG
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
+          test -s epg_mapped_with_logos.xml
+          node -e "
+            const fs = require('fs');
+            const xml = fs.readFileSync('epg_mapped_with_logos.xml', 'utf8');
+            if (!xml.includes('<tv') ||
+                !xml.includes('<channel') ||
+                !xml.includes('<programme')) {
+              console.error('Combined EPG is incomplete');
+              process.exit(1);
+            }
+            console.log('Combined EPG validation passed');
+          "
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git add epg_mapped_with_logos.xml
-          git diff-index --quiet HEAD || git commit -m "Update combined beIN EPG (MENA AR + FR-FR) with logos"
+
+          if git diff --cached --quiet; then
+            echo "No EPG changes to commit"
+            exit 0
+          fi
+
+          git commit -m "Update combined beIN EPG (MENA AR + FR-FR)"
           git pull --rebase origin main
-          git push origin main
+          git push origin HEAD:main
+          
