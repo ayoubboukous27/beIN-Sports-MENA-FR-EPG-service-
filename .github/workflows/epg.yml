@@ -27,6 +27,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          cache: npm
+          cache-dependency-path: epg/package-lock.json
 
       - name: Clone iptv-org/epg
         run: |
@@ -36,7 +38,8 @@ jobs:
         working-directory: epg
         run: |
           npm install --ignore-scripts
-          npm install --no-save --ignore-scripts xml2js tsx
+          npm run api:load
+          npm install --no-save --ignore-scripts xml2js
 
       - name: Verify channel files
         working-directory: epg
@@ -47,7 +50,7 @@ jobs:
       - name: Grab beIN MENA AR EPG
         working-directory: epg
         run: |
-          ./node_modules/.bin/tsx scripts/commands/epg/grab.ts \
+          npm run grab -- \
             --channels=sites/beinsports.com/beinsports.com_mena-ar.channels.xml \
             --output=guide_bein_mena_ar.xml \
             --days=7
@@ -55,7 +58,7 @@ jobs:
       - name: Grab beIN FR-FR EPG
         working-directory: epg
         run: |
-          ./node_modules/.bin/tsx scripts/commands/epg/grab.ts \
+          npm run grab -- \
             --channels=sites/beinsports.com/beinsports.com_fr-fr.channels.xml \
             --output=guide_bein_fr.xml \
             --days=7
@@ -74,20 +77,31 @@ jobs:
             ];
 
             const logos_ar = {
-              '7836FEA9-6B39-4A1A-8352-DC5FCB97A16C': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS1.png',
-              'beINSports2.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS2.png',
-              'beINSports4.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS4.png',
-              'beINSports5.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS5.png',
-              'beINSports6.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS6.png',
-              'beINSports7.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS7.png',
-              'beINSports8.qa@MENA': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS8.png',
-              '5C08D9D3-C713-4F1F-947E-87C761428B9B': 'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS9.png'
+              '7836FEA9-6B39-4A1A-8352-DC5FCB97A16C':
+                'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS1.png',
+              'beINSports2.qa@MENA':
+                'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS2.png',
+              'beINSports4.qa@MENA':
+                'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS4.png',
+              'beINSports5.qa@MENA':
+                'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS5.png',
+              'beINSports6.qa@MENA':
+                'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS6.png',
+              'beINSports7.qa@MENA':
+                'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS7.png',
+              'beINSports8.qa@MENA':
+                'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS8.png',
+              '5C08D9D3-C713-4F1F-947E-87C761428B9B':
+                'https://github.com/ayoubboukous27/beIN-Sports-EPG-Worldwide/raw/refs/heads/main/Logos/BS9.png'
             };
 
             const logos_fr = {
-              'beINSports1.qa@France': 'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-1-french-mea.png',
-              'beINSports2.qa@France': 'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-2-french-mea.png',
-              'beINSports3.qa@France': 'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-3-french-mea.png'
+              'beINSports1.qa@France':
+                'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-1-french-mea.png',
+              'beINSports2.qa@France':
+                'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-2-french-mea.png',
+              'beINSports3.qa@France':
+                'https://github.com/tv-logo/tv-logos/raw/refs/heads/main/countries/world-middle-east/bein-sports/bein-sports-3-french-mea.png'
             };
 
             const parser = new xml2js.Parser();
@@ -144,6 +158,10 @@ jobs:
 
             if (merged.tv.channel.length === 0) {
               throw new Error('No channels found in the merged EPG');
+            }
+
+            if (merged.tv.programme.length === 0) {
+              throw new Error('No programmes found in the merged EPG');
             }
 
             const output = builder.buildObject(merged);
@@ -203,6 +221,8 @@ jobs:
           EOF
 
       - name: Commit and push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
