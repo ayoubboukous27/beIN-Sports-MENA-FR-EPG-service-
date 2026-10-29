@@ -27,8 +27,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
-          cache-dependency-path: epg/package-lock.json
 
       - name: Clone iptv-org/epg
         run: |
@@ -125,7 +123,6 @@ jobs:
 
               for (const ch of result.tv.channel || []) {
                 const id = ch.$?.id;
-
                 if (!id) continue;
 
                 if (logos_ar[id]) {
@@ -171,17 +168,39 @@ jobs:
       - name: Validate combined EPG
         run: |
           test -s epg_mapped_with_logos.xml
-          node -e "
-            const fs = require('fs');
-            const xml = fs.readFileSync('epg_mapped_with_logos.xml', 'utf8');
-            if (!xml.includes('<tv') ||
-                !xml.includes('<channel') ||
-                !xml.includes('<programme')) {
-              console.error('Combined EPG is incomplete');
-              process.exit(1);
+
+          node <<'EOF'
+          const fs = require('fs');
+          const xml2js = require('./epg/node_modules/xml2js');
+
+          async function main() {
+            const xml = fs.readFileSync(
+              'epg_mapped_with_logos.xml',
+              'utf8'
+            );
+
+            const result = await new xml2js.Parser()
+              .parseStringPromise(xml);
+
+            if (
+              !result.tv ||
+              !result.tv.channel?.length ||
+              !result.tv.programme?.length
+            ) {
+              throw new Error('Combined EPG is incomplete');
             }
-            console.log('Combined EPG validation passed');
-          "
+
+            console.log(
+              `Validation passed: ${result.tv.channel.length} channels, ` +
+              `${result.tv.programme.length} programmes`
+            );
+          }
+
+          main().catch(error => {
+            console.error(error);
+            process.exit(1);
+          });
+          EOF
 
       - name: Commit and push
         run: |
